@@ -1,0 +1,78 @@
+{
+  "@context": {
+    "@vocab": "https://etzhayyim.com/ns/actor#",
+    "id": "@id",
+    "type": "@type"
+  },
+  "id": "actor:yomi",
+  "type": "Actor",
+  "name": "yomi",
+  "glyph": "読み",
+  "purpose": "News-INTELLIGENCE actor (a SOURCE / VOICE, not a medium). Subscribes to kawaraban's public news mirror (outlets · articles · mentions), reads the full text kawaraban holds only in its internal buffer (never the public Datom log, G4), runs a sealed intel-LLM ⊣ IntelGovernor that proposes an intel assessment grounded in the mirrored metadata + cached full text, and publishes the assessment in its own attributed voice. Where kawaraban mirrors the world and authors nothing, yomi reads it and says something — with provenance, on the record.",
+  "status": "R0-scaffold",
+  "tier": "B",
+  "adr": "2607010900",
+  "dependsOnAdr": ["2606281500", "2606061900", "2606131600", "2605312345", "2605262130", "2605215000"],
+  "lang": "langgraph-clj",
+  "lineage": "the intel-analysis SOURCE over the kawaraban news mirror; governed-LLM sibling of sng (synth-LLM ⊣ CarbonGovernor → intel-LLM ⊣ IntelGovernor). Reuses the charter-clean intel pipeline of the legacy news platform (260424 design: fetch → extract facts/findings → provenance scoring → credibility/priority gate → publish) without its ad-monetization contamination. Autonomous publication per ADR-2606281500 (種まき doctrine).",
+  "substrate": {
+    "state": "langchain.db :db-api ({:q :transact! :db :pull :entid}) — MemStore ‖ DatomicStore; PUBLIC region = subscribed kawaraban mirror edges (read-only observe), PRIVATE region = fulltext cache + intel assessments + append-only ledger (never written to a public Datom log via these calls)",
+    "inference": "Murakumo-only (ADR-2605215000) — LiteLLM 127.0.0.1:4000 / EVO-X2 / per-node Ollama; the IntelGovernor rejects any non-fleet model host (G2-fleet)",
+    "publication": "autonomous by default (ADR-2606281500) — a clean assessment auto-publishes in phase 3 with NO operator/Council signoff; bounded by IntelGovernor + credibility/priority gates + Rider §2 catastrophe-veto content scan. Publication ≠ actuation; yomi performs no actuation."
+  },
+  "integrates": ["actor:kawaraban", "actor:ake", "actor:danjo", "actor:kataribe"],
+  "cells": [
+    {
+      "id": "cell:yomi.intake",
+      "method": "src/yomi/synthesis.cljc (node :intake)",
+      "input": "{:op :outlet/register|:article/register|:mention/register|:analyze|:publish ...}",
+      "output": "routes ingest (→ :record) vs assess (→ :fetch-fulltext)",
+      "doc": "entry; pure dispatch on op (record-op? from phase)"
+    },
+    {
+      "id": "cell:yomi.record",
+      "method": "src/yomi/synthesis.cljc (node :record)",
+      "input": "subscribed kawaraban mirror edge",
+      "output": "durable EAVT ground datom + ledger {:t :recorded}",
+      "doc": "the OBSERVE charter — always on, never an LLM call, never an actuation"
+    },
+    {
+      "id": "cell:yomi.advise",
+      "method": "src/yomi/intelllm.cljc (-advise)",
+      "input": "request + store (mock ‖ real LLM via langchain.model)",
+      "output": "intel proposal {:facts :findings :entities :classification :credibility :priority :sources :provenance-chain :effect :confidence}",
+      "doc": "the sealed intel-LLM; PROPOSES only, never binds; facts separated from findings; INSUFFICIENT-honest (G4)"
+    },
+    {
+      "id": "cell:yomi.govern",
+      "method": "src/yomi/governor.cljc (check)",
+      "input": "request + proposal",
+      "output": "{:ok? :violations :confidence :hard? :escalate? :high-stakes?}",
+      "doc": "IntelGovernor — INDEPENDENT system; enforces sourcing/provenance/open-access/libel/fleet-model/no-actuation + publish credibility(≥0.7)/priority(≥0.45) gates; :high-stakes? always false (no actuation)"
+    },
+    {
+      "id": "cell:yomi.decide",
+      "method": "src/yomi/synthesis.cljc (node :decide) + src/yomi/phase.cljc",
+      "input": "verdict + phase",
+      "output": ":publish | :hold",
+      "doc": "phase gate (R0→R3); escalate folds to HOLD (yomi has no council — publication is autonomous, not a signoff path)"
+    },
+    {
+      "id": "cell:yomi.publish",
+      "method": "src/yomi/synthesis.cljc (node :publish)",
+      "input": "assessment record",
+      "output": "PRIVATE assessment datom + append-only ledger {:t :assessed :disposition :publish}",
+      "doc": "records the attributed assessment (the actor's own voice) + genealogy entry"
+    }
+  ],
+  "gates": {
+    "G-sources": ":unsourced-claim — proposal :sources empty → HARD HOLD",
+    "G-provenance": ":missing-provenance — no :provenance-chain → HARD HOLD",
+    "G4-access": ":non-open-fulltext — outlet :access ∉ {:open :registration-wall} → HARD HOLD (kawaraban cannot mirror a paywall/terminal feed, so yomi cannot ground intel on it either; touch the outlet :access enum in lockstep with kawaraban's schema/lexicon)",
+    "G-libel": ":libel-risk — proposal :defamatory? true → HARD HOLD",
+    "G2-fleet": ":non-fleet-model — :model-host (when present) not in the Murakumo allowlist → HARD HOLD (ADR-2605215000)",
+    "G-no-actuation": ":no-actuation — :effect must be :assessment; yomi publishes intel, it never actuates, directs, or instructs (publication ≠ actuation)",
+    "G-publish": "op :publish only — :low-credibility (<0.7) / :low-priority (<0.45) → HOLD; SOFT confidence floor 0.6 → escalate on :analyze (folds to HOLD)",
+    "G-autonomy": "publication is AUTONOMOUS BY DEFAULT (ADR-2606281500) — no per-post operator/Council gate, no request-approval/interrupt node; bounded by Governor + catastrophe-veto content scan"
+  }
+}
